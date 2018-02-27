@@ -6,27 +6,52 @@ import struct
 import torch
 from torch.autograd import Variable
 import numpy as np
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader
+from torchvision import transforms
+
+class ToTensor(object):
+    """Convert ndarrays in sample to Tensors."""
+    def __call__(self, sample):
+        dtype = torch.FloatTensor
+        if torch.cuda.is_available():
+            dtype = torch.cuda.FloatTensor
+        image, label = sample['image'], sample['label']
+        # swap color axis because
+        # numpy image: H x W x C
+        # torch image: C X H X W
+        image = image.transpose((2, 0, 1))
+        label = np.array([1 if lbl == label else 0 for lbl in range(10)])
+        image = torch.from_numpy(image).type(dtype)
+        label = torch.from_numpy(label).type(dtype)
+        return {'image': image,
+                'label': label}
+
+class ZeroPad(object):
+    def __init__(self, pad_size):
+        self.pad_size = [(pad_size, pad_size), (pad_size, pad_size), (0, 0)]
+    def __call__(self, sample):
+        sample['image'] = np.pad(sample['image'], self.pad_size, mode='constant')
+        return sample
 
 class mnist(Dataset):
-    def __init__(self):
+    def __init__(self, set_type='train', transform=None):
         """Data and data format specification at http://yann.lecun.com/exdb/mnist/"""
-        self.train = []
-        self.test = []
-        train_images, train_labels, test_images, test_labels = [[] for _ in range(4)]
-        data_path = pathlib.Path(__file__).parents[1] / 'data' / 'mnist'
+        if set_type not in ['train', 't10k', 'test']:
+            raise Exception('Unrecognized data set choice. Valid choices are "train", "test", or "t10k"')
+        self.transform = transform
+        self.data = []
+        images, labels = [[], []]
+        data_path = pathlib.Path(__file__).resolve().parent / 'data' / 'mnist'
         for compressed_file in data_path.glob('*.gz'):
+            if set_type not in compressed_file.name:
+                continue
             with gzip.open(compressed_file, 'rb') as cf:
                 if 'labels' in compressed_file.name:
                     # Unpack magic number (discarded) and number of elements
                     _magic_number, num_labels = struct.unpack('>ii', cf.read(8))
                     # Unpack the rest into a list
                     labels_iter = struct.iter_unpack('>B', cf.read())
-                    labels = [label[0] for label in labels_iter]
-                    if 't10k' in compressed_file.name:
-                        test_labels = labels
-                    elif 'train' in compressed_file.name:
-                        train_labels = labels
+                    labels = np.array([label[0] for label in labels_iter])
                     assert num_labels == len(labels)
                 elif 'images' in compressed_file.name:
                     # Unpack the magic number (discarded), number of images, number of rows, number of columns
@@ -34,19 +59,21 @@ class mnist(Dataset):
                     _magic_number, num_images, self.num_rows, self.num_cols = struct.unpack('>iiii', cf.read(16))
                     pixels = list(struct.iter_unpack('>B', cf.read()))
                     for i in range(0, num_images * self.num_rows * self.num_cols, self.num_rows * self.num_cols):
-                        images.append([pixel[0] for pixel in pixels[i: i + self.num_rows * self.num_cols]])
-                    if 't10k' in compressed_file.name:
-                        test_images = images
-                    elif 'train' in compressed_file.name:
-                        train_images = images
+                        image = np.array([pixel[0] for pixel in pixels[i: i + self.num_rows * self.num_cols]])
+                        image.shape = (self.num_rows, self.num_cols, 1)
+                        images.append(image)
                     assert len(images) == num_images
-        assert len(train_images) == len(train_labels)
-        assert len(test_images) == len(test_labels)
-        self.train = list(zip(train_images, train_labels))
-        self.test = list(zip(test_images, test_labels))
+        assert len(images) == len(labels)
+        self.data = list(zip(images, labels))
 
     def __len__(self):
-        return len(self.train) + len(self.test)
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        sample = {'image': self.data[idx][0], 'label': self.data[idx][1]}
+        if self.transform:
+            sample = self.transform(sample)
+        return sample
 
 class LeNet5(torch.nn.Module):
     """LeNet-5 CNN Architecture"""
@@ -79,39 +106,38 @@ class LeNet5(torch.nn.Module):
         return self.classifier(c3_flat)
 
 if __name__ == '__main__':
-    data = mnist()
+    training_data = DataLoader(mnist(set_type='train',
+                                     transform=transforms.Compose([ZeroPad(pad_size=2), ToTensor()])),
+                               batch_size=1)
     model = LeNet5()
-    input_pad_width = 2
     loss_fn = torch.nn.MSELoss(size_average=True)
     dtype = torch.FloatTensor
     if torch.cuda.is_available():
         dtype = torch.cuda.FloatTensor
         model.cuda()
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
-    # TODO: Use same learning rate in paper
+    optimizer = torch.optim.Adam(model.parameters(), lr=5e-4)
+    # TODO: Use same learning rate schedule in paper
+    # Learning Rate schedule: 0.0005 for first 2 iterations, 0.0002 for next 3, 0.0001 next 3, 0.00005 next 4,
+    # 0.00001 thereafter
     # TODO: Use same optimization strategy in paper
-    # TODO: Run more than one epoch
     # TODO: Check test error
     # TODO: Plot an error vs training set size curve
     # TODO: Plot an epoch vs error curve
     # TODO: Implement argparse
     # TODO: Normalize image data to [-0.1, 1.175]
     # TODO: Track training time
-    for t in range(1):
+    EPOCHS = 20
+    model.train(True)
+    for t in range(EPOCHS):
         # TODO: Incomplete
         error = []
-        for image, label in data.train:
-            image = np.array(image).reshape([data.num_rows, data.num_cols])
-            image = np.pad(image, input_pad_width, 'edge')
-            image = image.reshape([1, 1, image.shape[0], image.shape[1]])
-            label_vec = [1 if lbl == label else 0 for lbl in range(10)]
-            x = Variable(torch.FloatTensor(image).type(dtype))
-            label = Variable(torch.FloatTensor(label_vec), requires_grad=False).type(dtype)
-            y_pred = model(x)
+        print(f"Epoch: {t}")
+        for sample in training_data:
+            image = Variable(sample['image'].cuda())
+            label = Variable(sample['label'].cuda(), requires_grad=False)
+            y_pred = model(image)
             loss = loss_fn(y_pred, label)
-            print(t, loss.data[0])
+            # print(t, loss.data[0])
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-        print(t)
-
