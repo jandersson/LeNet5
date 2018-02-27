@@ -38,6 +38,8 @@ class mnist(Dataset):
         """Data and data format specification at http://yann.lecun.com/exdb/mnist/"""
         if set_type not in ['train', 't10k', 'test']:
             raise Exception('Unrecognized data set choice. Valid choices are "train", "test", or "t10k"')
+        if set_type == 'test':
+            set_type = 't10k'
         self.transform = transform
         self.data = []
         images, labels = [[], []]
@@ -107,7 +109,8 @@ class LeNet5(torch.nn.Module):
 
 if __name__ == '__main__':
     training_data = DataLoader(mnist(set_type='train',
-                                     transform=transforms.Compose([ZeroPad(pad_size=2), ToTensor()])),
+                                     transform=transforms.Compose([ZeroPad(pad_size=2),
+                                                                   ToTensor()])),
                                batch_size=1)
     model = LeNet5()
     loss_fn = torch.nn.MSELoss(size_average=True)
@@ -126,18 +129,34 @@ if __name__ == '__main__':
     # TODO: Implement argparse
     # TODO: Normalize image data to [-0.1, 1.175]
     # TODO: Track training time
-    EPOCHS = 20
+    EPOCHS = 2
     model.train(True)
+    running_loss = 0.0
     for t in range(EPOCHS):
         # TODO: Incomplete
         error = []
-        print(f"Epoch: {t}")
         for sample in training_data:
             image = Variable(sample['image'].cuda())
             label = Variable(sample['label'].cuda(), requires_grad=False)
             y_pred = model(image)
             loss = loss_fn(y_pred, label)
+            running_loss += loss.data[0]
             # print(t, loss.data[0])
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+        print(f"Epoch: {t} \tRunning Loss: {running_loss}")
+
+    test_data = DataLoader(mnist(set_type='test',
+                                 transform=transforms.Compose([ZeroPad(pad_size=2),
+                                                               ToTensor()])),
+                           batch_size=1)
+    model.train(False)
+    correct = 0
+    for sample in test_data:
+        image = Variable(sample['image'])
+        label = Variable(sample['label'])
+        y_pred = model(image)
+        correct += 1 if torch.equal(torch.max(y_pred.data, 1)[1], torch.max(label.data, 1)[1]) else 0
+    print(f"{correct/len(test_data)}")
+
