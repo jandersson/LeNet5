@@ -35,6 +35,17 @@ class ZeroPad(object):
         sample['image'] = np.pad(sample['image'], self.pad_size, mode='constant')
         return sample
 
+class Normalize(object):
+    """Make the mean input 0 and variance roughly 1 to accelerate learning"""
+    def __call__(self, sample):
+        original_shape = sample['image'].shape
+        image = sample['image'].ravel()
+        image -= np.average(image)
+        image /= np.std(image)
+        image.shape = original_shape
+        sample['image'] = image
+        return sample
+
 class mnist(Dataset):
     def __init__(self, set_type='train', transform=None):
         """Data and data format specification at http://yann.lecun.com/exdb/mnist/"""
@@ -63,7 +74,7 @@ class mnist(Dataset):
                     _magic_number, num_images, self.num_rows, self.num_cols = struct.unpack('>iiii', cf.read(16))
                     pixels = list(struct.iter_unpack('>B', cf.read()))
                     for i in range(0, num_images * self.num_rows * self.num_cols, self.num_rows * self.num_cols):
-                        image = np.array([pixel[0] for pixel in pixels[i: i + self.num_rows * self.num_cols]])
+                        image = np.array([pixel[0] for pixel in pixels[i: i + self.num_rows * self.num_cols]], dtype=float)
                         image.shape = (self.num_rows, self.num_cols, 1)
                         images.append(image)
                     assert len(images) == num_images
@@ -131,11 +142,13 @@ def get_optimizer(model, current_epoch):
 if __name__ == '__main__':
     training_data = DataLoader(mnist(set_type='train',
                                      transform=transforms.Compose([ZeroPad(pad_size=2),
+                                                                   Normalize(),
                                                                    ToTensor()])),
                                batch_size=1)
 
     test_data = DataLoader(mnist(set_type='test',
                                  transform=transforms.Compose([ZeroPad(pad_size=2),
+                                                               Normalize(),
                                                                ToTensor()])),
                            batch_size=1)
     model = LeNet5()
@@ -147,7 +160,6 @@ if __name__ == '__main__':
     # TODO: Plot an error vs training set size curve
     # TODO: Plot an epoch vs error curve
     # TODO: Implement argparse
-    # TODO: Normalize image data to [-0.1, 1.175]
     EPOCHS = 20
     running_loss = 0.0
     start_time = time.time()
