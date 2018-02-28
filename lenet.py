@@ -174,7 +174,7 @@ if __name__ == '__main__':
             label = Variable(sample['label'])
             y_pred = model(image)
             correct += 1 if torch.equal(torch.max(y_pred.data, 1)[1], torch.max(label.data, 1)[1]) else 0
-            print(f"Epoch: {t}\tRunning Loss: {running_loss:.2f}\tEpoch time: {(time.time() - epoch_start_time):.2f} sec")
-            print(f"Test Accuracy: {(correct/len(test_data)):.2%}")
-            print(f"Elapsed time: {(time.time() - start_time):.2f} sec")
+        print(f"Epoch: {t}\tRunning Loss: {running_loss:.2f}\tEpoch time: {(time.time() - epoch_start_time):.2f} sec")
+        print(f"Test Accuracy: {(correct/len(test_data)):.2%}")
+        print(f"Elapsed time: {(time.time() - start_time):.2f} sec")
 
