@@ -7,6 +7,7 @@ import time
 import torch
 from torch.autograd import Variable
 from torch.utils.data import Dataset, DataLoader
+from torch.optim import lr_scheduler
 from torchvision import transforms
 import numpy as np
 
@@ -109,6 +110,24 @@ class LeNet5(torch.nn.Module):
         c3_flat = c3_out.view(c3_out.size(0), -1)
         return self.classifier(c3_flat)
 
+def get_optimizer(model, current_epoch):
+    """Return optimizer with learning rate schedule from paper"""
+    # Learning Rate schedule: 0.0005 for first 2 iterations, 0.0002 for next 3, 0.0001 next 3, 0.00005 next 4,
+    # 0.00001 thereafter
+    if current_epoch < 2:
+        new_lr = 5e-4
+    elif current_epoch < 5:
+        new_lr = 2e-4
+    elif current_epoch < 8:
+        new_lr = 1e-4
+    elif current_epoch < 12:
+        new_lr = 5e-5
+    else:
+        new_lr = 1e-5
+    print(f"Using learning rate {new_lr} for epoch {current_epoch}")
+    return torch.optim.Adam(model.parameters(), lr=new_lr)
+
+
 if __name__ == '__main__':
     training_data = DataLoader(mnist(set_type='train',
                                      transform=transforms.Compose([ZeroPad(pad_size=2),
@@ -120,34 +139,31 @@ if __name__ == '__main__':
     if torch.cuda.is_available():
         dtype = torch.cuda.FloatTensor
         model.cuda()
-    optimizer = torch.optim.Adam(model.parameters(), lr=5e-4)
-    # TODO: Use same learning rate schedule in paper
-    # Learning Rate schedule: 0.0005 for first 2 iterations, 0.0002 for next 3, 0.0001 next 3, 0.00005 next 4,
-    # 0.00001 thereafter
     # TODO: Use same optimization strategy in paper
     # TODO: Plot an error vs training set size curve
     # TODO: Plot an epoch vs error curve
     # TODO: Implement argparse
     # TODO: Normalize image data to [-0.1, 1.175]
-    EPOCHS = 2
+    EPOCHS = 20
     model.train(True)
     running_loss = 0.0
     start_time = time.time()
     for t in range(EPOCHS):
         # TODO: Incomplete
         error = []
+        optimizer = get_optimizer(model, t)
         epoch_start_time = time.time()
         for sample in training_data:
-            image = Variable(sample['image'].cuda())
-            label = Variable(sample['label'].cuda(), requires_grad=False)
+            image = Variable(sample['image'])
+            label = Variable(sample['label'], requires_grad=False)
             y_pred = model(image)
             loss = loss_fn(y_pred, label)
             running_loss += loss.data[0]
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-        print(f"Epoch: {t}\tRunning Loss: {running_loss:.2}\tEpoch time: {(time.time() - epoch_start_time):.2} sec")
-        print(f"Elapsed time: {(time.time() - start_time):.2} sec")
+        print(f"Epoch: {t}\tRunning Loss: {running_loss:.2f}\tEpoch time: {(time.time() - epoch_start_time):.2f} sec")
+        print(f"Elapsed time: {(time.time() - start_time):.2f} sec")
 
     test_data = DataLoader(mnist(set_type='test',
                                  transform=transforms.Compose([ZeroPad(pad_size=2),
@@ -160,6 +176,6 @@ if __name__ == '__main__':
         label = Variable(sample['label'])
         y_pred = model(image)
         correct += 1 if torch.equal(torch.max(y_pred.data, 1)[1], torch.max(label.data, 1)[1]) else 0
-    print(f"Test Accuracy: {(correct/len(test_data)):.2}%")
-    print(f"Elapsed time: {(time.time() - start_time):.2} sec")
+    print(f"Test Accuracy: {(correct/len(test_data)):.2%}")
+    print(f"Elapsed time: {(time.time() - start_time):.2f} sec")
 
