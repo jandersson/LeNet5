@@ -3,11 +3,12 @@
 import pathlib
 import gzip
 import struct
+import time
 import torch
 from torch.autograd import Variable
-import numpy as np
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
+import numpy as np
 
 class ToTensor(object):
     """Convert ndarrays in sample to Tensors."""
@@ -100,6 +101,7 @@ class LeNet5(torch.nn.Module):
             torch.nn.Tanh(),
             torch.nn.Linear(in_features=84, out_features=10),
         )
+
     def forward(self, x):
         c1_out = self.c1(x)
         c2_out = self.c2(c1_out)
@@ -123,29 +125,29 @@ if __name__ == '__main__':
     # Learning Rate schedule: 0.0005 for first 2 iterations, 0.0002 for next 3, 0.0001 next 3, 0.00005 next 4,
     # 0.00001 thereafter
     # TODO: Use same optimization strategy in paper
-    # TODO: Check test error
     # TODO: Plot an error vs training set size curve
     # TODO: Plot an epoch vs error curve
     # TODO: Implement argparse
     # TODO: Normalize image data to [-0.1, 1.175]
-    # TODO: Track training time
     EPOCHS = 2
     model.train(True)
     running_loss = 0.0
+    start_time = time.time()
     for t in range(EPOCHS):
         # TODO: Incomplete
         error = []
+        epoch_start_time = time.time()
         for sample in training_data:
             image = Variable(sample['image'].cuda())
             label = Variable(sample['label'].cuda(), requires_grad=False)
             y_pred = model(image)
             loss = loss_fn(y_pred, label)
             running_loss += loss.data[0]
-            # print(t, loss.data[0])
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-        print(f"Epoch: {t} \tRunning Loss: {running_loss}")
+        print(f"Epoch: {t}\tRunning Loss: {running_loss:.2}\tEpoch time: {(time.time() - epoch_start_time):.2} sec")
+        print(f"Elapsed time: {(time.time() - start_time):.2} sec")
 
     test_data = DataLoader(mnist(set_type='test',
                                  transform=transforms.Compose([ZeroPad(pad_size=2),
@@ -158,5 +160,6 @@ if __name__ == '__main__':
         label = Variable(sample['label'])
         y_pred = model(image)
         correct += 1 if torch.equal(torch.max(y_pred.data, 1)[1], torch.max(label.data, 1)[1]) else 0
-    print(f"{correct/len(test_data)}")
+    print(f"Test Accuracy: {(correct/len(test_data)):.2}%")
+    print(f"Elapsed time: {(time.time() - start_time):.2} sec")
 
