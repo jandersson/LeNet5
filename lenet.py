@@ -7,7 +7,6 @@ import time
 import torch
 from torch.autograd import Variable
 from torch.utils.data import Dataset, DataLoader
-from torch.optim import lr_scheduler
 from torchvision import transforms
 import numpy as np
 
@@ -37,23 +36,26 @@ class ZeroPad(object):
 
 class Normalize(object):
     """Make the mean input 0 and variance roughly 1 to accelerate learning"""
+    def __init__(self, mean, stdev):
+        self.mean = mean
+        self.stdev = stdev
+
     def __call__(self, sample):
         original_shape = sample['image'].shape
         image = sample['image'].ravel()
-        image -= np.average(image)
-        image /= np.std(image)
+        image -= self.mean
+        image /= self.stdev
         image.shape = original_shape
         sample['image'] = image
         return sample
 
 class mnist(Dataset):
+    """Data and data format specification at http://yann.lecun.com/exdb/mnist/"""
     def __init__(self, set_type='train', transform=None):
-        """Data and data format specification at http://yann.lecun.com/exdb/mnist/"""
         if set_type not in ['train', 't10k', 'test']:
             raise Exception('Unrecognized data set choice. Valid choices are "train", "test", or "t10k"')
         if set_type == 'test':
             set_type = 't10k'
-        self.transform = transform
         self.data = []
         images, labels = [[], []]
         data_path = pathlib.Path(__file__).resolve().parent / 'data' / 'mnist'
@@ -73,13 +75,20 @@ class mnist(Dataset):
                     images = []
                     _magic_number, num_images, self.num_rows, self.num_cols = struct.unpack('>iiii', cf.read(16))
                     pixels = list(struct.iter_unpack('>B', cf.read()))
+                    pix_sum = 0.0
+                    num_pixels = 0
                     for i in range(0, num_images * self.num_rows * self.num_cols, self.num_rows * self.num_cols):
                         image = np.array([pixel[0] for pixel in pixels[i: i + self.num_rows * self.num_cols]], dtype=float)
+                        pix_sum += np.sum(image)
+                        num_pixels += len(image)
                         image.shape = (self.num_rows, self.num_cols, 1)
                         images.append(image)
+                    self.pix_mean = pix_sum/num_pixels
+                    self.num_pixels = num_pixels
                     assert len(images) == num_images
         assert len(images) == len(labels)
         self.data = list(zip(images, labels))
+        self.transform = transform
 
     def __len__(self):
         return len(self.data)
@@ -89,6 +98,15 @@ class mnist(Dataset):
         if self.transform:
             sample = self.transform(sample)
         return sample
+
+    def stdev(self):
+        variance_sum = 0.0
+        for image, _ in self.data:
+            for pix in image.ravel():
+                variance_sum += (pix - self.pix_mean)**2
+        avg_variance = variance_sum/self.num_pixels
+        return np.sqrt(avg_variance)
+
 
 class LeNet5(torch.nn.Module):
     """LeNet-5 CNN Architecture"""
@@ -141,14 +159,16 @@ def get_optimizer(model, current_epoch):
 
 if __name__ == '__main__':
     training_data = DataLoader(mnist(set_type='train',
-                                     transform=transforms.Compose([ZeroPad(pad_size=2),
-                                                                   Normalize(),
-                                                                   ToTensor()])),
+                                     ),
                                batch_size=1)
-
+    train_mean = training_data.dataset.pix_mean
+    train_stdev = training_data.dataset.stdev()
+    training_data.dataset.transform=transforms.Compose([ZeroPad(pad_size=2),
+                                                        Normalize(mean=train_mean, stdev=train_stdev),
+                                                        ToTensor()])
     test_data = DataLoader(mnist(set_type='test',
                                  transform=transforms.Compose([ZeroPad(pad_size=2),
-                                                               Normalize(),
+                                                               Normalize(mean=train_mean, stdev=train_stdev),
                                                                ToTensor()])),
                            batch_size=1)
     model = LeNet5()
