@@ -125,7 +125,7 @@ def get_optimizer(model, current_epoch):
     else:
         new_lr = 1e-5
     print(f"Using learning rate {new_lr} for epoch {current_epoch}")
-    return torch.optim.Adam(model.parameters(), lr=new_lr)
+    return torch.optim.SGD(model.parameters(), lr=new_lr)
 
 
 if __name__ == '__main__':
@@ -144,7 +144,6 @@ if __name__ == '__main__':
     if torch.cuda.is_available():
         dtype = torch.cuda.FloatTensor
         model.cuda()
-    # TODO: Use same optimization strategy in paper
     # TODO: Plot an error vs training set size curve
     # TODO: Plot an epoch vs error curve
     # TODO: Implement argparse
