@@ -133,6 +133,11 @@ if __name__ == '__main__':
                                      transform=transforms.Compose([ZeroPad(pad_size=2),
                                                                    ToTensor()])),
                                batch_size=1)
+
+    test_data = DataLoader(mnist(set_type='test',
+                                 transform=transforms.Compose([ZeroPad(pad_size=2),
+                                                               ToTensor()])),
+                           batch_size=1)
     model = LeNet5()
     loss_fn = torch.nn.MSELoss(size_average=True)
     dtype = torch.FloatTensor
@@ -145,7 +150,6 @@ if __name__ == '__main__':
     # TODO: Implement argparse
     # TODO: Normalize image data to [-0.1, 1.175]
     EPOCHS = 20
-    model.train(True)
     running_loss = 0.0
     start_time = time.time()
     for t in range(EPOCHS):
@@ -153,6 +157,7 @@ if __name__ == '__main__':
         error = []
         optimizer = get_optimizer(model, t)
         epoch_start_time = time.time()
+        model.train(True)
         for sample in training_data:
             image = Variable(sample['image'])
             label = Variable(sample['label'], requires_grad=False)
@@ -162,20 +167,14 @@ if __name__ == '__main__':
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-        print(f"Epoch: {t}\tRunning Loss: {running_loss:.2f}\tEpoch time: {(time.time() - epoch_start_time):.2f} sec")
-        print(f"Elapsed time: {(time.time() - start_time):.2f} sec")
-
-    test_data = DataLoader(mnist(set_type='test',
-                                 transform=transforms.Compose([ZeroPad(pad_size=2),
-                                                               ToTensor()])),
-                           batch_size=1)
-    model.train(False)
-    correct = 0
-    for sample in test_data:
-        image = Variable(sample['image'])
-        label = Variable(sample['label'])
-        y_pred = model(image)
-        correct += 1 if torch.equal(torch.max(y_pred.data, 1)[1], torch.max(label.data, 1)[1]) else 0
-    print(f"Test Accuracy: {(correct/len(test_data)):.2%}")
-    print(f"Elapsed time: {(time.time() - start_time):.2f} sec")
+        model.train(False)
+        correct = 0
+        for sample in test_data:
+            image = Variable(sample['image'])
+            label = Variable(sample['label'])
+            y_pred = model(image)
+            correct += 1 if torch.equal(torch.max(y_pred.data, 1)[1], torch.max(label.data, 1)[1]) else 0
+            print(f"Epoch: {t}\tRunning Loss: {running_loss:.2f}\tEpoch time: {(time.time() - epoch_start_time):.2f} sec")
+            print(f"Test Accuracy: {(correct/len(test_data)):.2%}")
+            print(f"Elapsed time: {(time.time() - start_time):.2f} sec")
 
