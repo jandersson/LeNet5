@@ -3,7 +3,7 @@
 import time
 import torch
 from torch.autograd import Variable
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import DataLoader
 from torchvision import transforms
 import numpy as np
 import mnist
