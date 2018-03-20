@@ -1,12 +1,9 @@
-"""PyTorch Implementation of LeNet-5, Recreating the network in http://yann.lecun.com/exdb/publis/pdf/lecun-98.pdf """
+"""PyTorch Implementation of LeNet-5, Recreating the network in http://yann.lecun.com/exdb/publis/pdf/lecun-98.pdf
+Uses ReLU instead of tanh activation
+Uses Max pooling instead of average
+"""
 
-import time
 import torch
-from torch.autograd import Variable
-from torch.utils.data import DataLoader
-from torchvision import transforms
-import mnist
-
 
 class LeNet5(torch.nn.Module):
     """LeNet-5 CNN Architecture"""
@@ -14,21 +11,21 @@ class LeNet5(torch.nn.Module):
         super(LeNet5, self).__init__()
         self.c1 = torch.nn.Sequential(
             torch.nn.Conv2d(in_channels=1, out_channels=6, kernel_size=5, stride=1, padding=0),
-            torch.nn.AvgPool2d(kernel_size=2, stride=2, padding=0),
-            torch.nn.Tanh(),
+            torch.nn.MaxPool2d(kernel_size=2, stride=2, padding=0),
+            torch.nn.ReLU(),
         )
         self.c2 = torch.nn.Sequential(
             torch.nn.Conv2d(in_channels=6, out_channels=16, kernel_size=5, stride=1, padding=0),
-            torch.nn.AvgPool2d(kernel_size=2, stride=2, padding=0),
-            torch.nn.Tanh(),
+            torch.nn.MaxPool2d(kernel_size=2, stride=2, padding=0),
+            torch.nn.ReLU(),
         )
         self.c3 = torch.nn.Sequential(
             torch.nn.Conv2d(in_channels=16, out_channels=120, stride=1, kernel_size=5, padding=0),
-            torch.nn.Tanh(),
+            torch.nn.ReLU(),
         )
         self.classifier = torch.nn.Sequential(
             torch.nn.Linear(in_features=120, out_features=84),
-            torch.nn.Tanh(),
+            torch.nn.ReLU(),
             torch.nn.Linear(in_features=84, out_features=10),
         )
 
