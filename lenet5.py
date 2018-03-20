@@ -11,13 +11,13 @@ class LeNet5(torch.nn.Module):
         super(LeNet5, self).__init__()
         self.c1 = torch.nn.Sequential(
             torch.nn.Conv2d(in_channels=1, out_channels=6, kernel_size=5, stride=1, padding=0),
-            torch.nn.MaxPool2d(kernel_size=2, stride=2, padding=0),
             torch.nn.ReLU(),
+            torch.nn.MaxPool2d(kernel_size=2, stride=2, padding=0),
         )
         self.c2 = torch.nn.Sequential(
             torch.nn.Conv2d(in_channels=6, out_channels=16, kernel_size=5, stride=1, padding=0),
-            torch.nn.MaxPool2d(kernel_size=2, stride=2, padding=0),
             torch.nn.ReLU(),
+            torch.nn.MaxPool2d(kernel_size=2, stride=2, padding=0),
         )
         self.c3 = torch.nn.Sequential(
             torch.nn.Conv2d(in_channels=16, out_channels=120, stride=1, kernel_size=5, padding=0),
