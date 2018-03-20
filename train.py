@@ -3,9 +3,10 @@ import torch
 from torch.autograd import Variable
 from torch.utils.data import DataLoader
 from torchvision import transforms
-import mnist
+from mnist import mnist
 from lenet5 import LeNet5
-
+import numpy as np
+import argparse
 
 class ToTensor(object):
     """Convert ndarrays in sample to Tensors."""
@@ -48,7 +49,7 @@ class Normalize(object):
         sample['image'] = image
         return sample
 
-def get_optimizer(model, current_epoch):
+def update_learning_rate(optimizer, current_epoch, override=None):
     """Return optimizer with learning rate schedule from paper"""
     # Learning Rate schedule: 0.0005 for first 2 iterations, 0.0002 for next 3, 0.0001 next 3, 0.00005 next 4,
     # 0.00001 thereafter
@@ -62,10 +63,30 @@ def get_optimizer(model, current_epoch):
         new_lr = 5e-5
     else:
         new_lr = 1e-5
-    print(f"Using learning rate {new_lr} for epoch {current_epoch}")
-    return torch.optim.SGD(model.parameters(), lr=5e-4)
+    if override:
+        new_lr = override
+    for param_group in optimizer.param_groups:
+        param_group['lr'] = new_lr
+
+def save_model(state, filename='checkpoint.pth.tar'):
+    torch.save(state, filename)
+
+def load_model(model, optimizer, checkpoint='checkpoint.pth.tar'):
+    checkpoint = torch.load(checkpoint)
+    start_epoch = checkpoint['epoch']
+    model.load_state_dict(checkpoint['state_dict'])
+    optimizer.load_state_dict(checkpoint['optimizer'])
+    return start_epoch
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Train a model')
+    parser.add_argument('--resume', type=bool, default=False, help='Resume training from checkpoint file')
+    args = parser.parse_args()
+
+    resume = args.resume
+    start_epoch = 0
+    EPOCHS = 80
+    running_loss = 0.0
     training_data = DataLoader(mnist(set_type='train'), batch_size=1)
     train_mean = training_data.dataset.pix_mean
     train_stdev = training_data.dataset.stdev
@@ -75,6 +96,9 @@ if __name__ == '__main__':
     training_data.dataset.transform = trsfrms
     test_data = DataLoader(mnist(set_type='test', transform=trsfrms), batch_size=1)
     model = LeNet5()
+    optimizer = torch.optim.SGD(model.parameters(), lr=1e-4)
+    if resume:
+        start_epoch = load_model(model, optimizer)
     loss_fn = torch.nn.MSELoss(size_average=True)
     dtype = torch.FloatTensor
     if torch.cuda.is_available():
@@ -83,14 +107,10 @@ if __name__ == '__main__':
         model.cuda()
     # TODO: Plot an error vs training set size curve
     # TODO: Plot an epoch vs error curve
-    # TODO: Implement argparse
-    EPOCHS = 40
-    running_loss = 0.0
     start_time = time.time()
-    for t in range(EPOCHS):
+    for t in range(start_epoch, EPOCHS):
         # TODO: Incomplete
-        error = []
-        optimizer = get_optimizer(model, t)
+        update_learning_rate(optimizer, t, override=1e-4)
         epoch_start_time = time.time()
         model.train(True)
         for sample in training_data:
@@ -112,3 +132,5 @@ if __name__ == '__main__':
         print(f"Epoch: {t}\tRunning Loss: {running_loss:.2f}\tEpoch time: {(time.time() - epoch_start_time):.2f} sec")
         print(f"Test Accuracy: {(correct/len(test_data)):.2%}")
         print(f"Elapsed time: {(time.time() - start_time):.2f} sec")
+        print("Creating checkpoint")
+        save_model({'epoch': t, 'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict()})
