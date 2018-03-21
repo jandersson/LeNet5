@@ -99,7 +99,7 @@ if __name__ == '__main__':
     optimizer = torch.optim.SGD(model.parameters(), lr=1e-4)
     if resume:
         start_epoch = load_model(model, optimizer)
-    loss_fn = torch.nn.MSELoss(size_average=True)
+    loss_fn = torch.nn.CrossEntropyLoss(size_average=True)
     dtype = torch.FloatTensor
     if torch.cuda.is_available():
         print("Using GPU")
@@ -110,14 +110,14 @@ if __name__ == '__main__':
     start_time = time.time()
     for t in range(start_epoch, EPOCHS):
         # TODO: Incomplete
-        update_learning_rate(optimizer, t, override=1e-4)
+        update_learning_rate(optimizer, t)
         epoch_start_time = time.time()
         model.train(True)
         for sample in training_data:
             image = Variable(sample['image'])
-            label = Variable(sample['label'], requires_grad=False)
+            label = Variable((sample['label'].squeeze() == 1).nonzero(), requires_grad=False)
             y_pred = model(image)
-            loss = loss_fn(y_pred, label)
+            loss = loss_fn(y_pred, label.squeeze())
             running_loss += loss.data[0]
             optimizer.zero_grad()
             loss.backward()
