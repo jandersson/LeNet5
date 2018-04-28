@@ -86,6 +86,8 @@ class Trainer(object):
         # Visdom requires one data point for initializing a plot. No blankboards allowed yet.
         self.train_loss_plot = None
         self.test_accuracy_plot = None
+        self.text_log = None
+        self.log_messages = ''
 
     def update_loss_plot(self, epoch, epoch_loss):
         if not self.train_loss_plot:
@@ -117,6 +119,15 @@ class Trainer(object):
                           win=self.test_accuracy_plot,
                           update='append')
 
+    def update_text_log(self, message):
+        print(message)
+        if not self.text_log:
+            self.log_messages = message
+            self.text_log = self.vis.text(message)
+        else:
+            self.log_messages = self.log_messages + f"\n<br>{message}"
+            self.vis.text(self.log_messages, win=self.text_log)
+
     def setup_model(self, resume=False):
         print("Loading Model")
         self.model = LeNet5()
@@ -134,17 +145,17 @@ class Trainer(object):
         self.optimizer.load_state_dict(checkpoint['optimizer'])
 
     def train(self):
-        print("Training Module Started")
+        self.update_text_log("Training Module Started")
         args = get_args()
         self.setup_model()
         resume = args.resume
         start_epoch = 0
 
         running_loss = 0.0
-        print("Loading MNIST Data")
+        self.update_text_log("Loading MNIST Data")
         training_data = DataLoader(mnist(set_type='train'), batch_size=1)
-        print("MNIST Loaded")
-        print("Transforming Data")
+        self.update_text_log("MNIST Loaded")
+        self.update_text_log("Transforming Data")
         train_mean = training_data.dataset.pix_mean
         train_stdev = training_data.dataset.stdev
         trsfrms = transforms.Compose([ZeroPad(pad_size=2),
@@ -152,7 +163,7 @@ class Trainer(object):
                                       ToTensor()])
         training_data.dataset.transform = trsfrms
         test_data = DataLoader(mnist(set_type='test', transform=trsfrms), batch_size=1)
-        print("Transform Complete")
+        self.update_text_log("Transform Complete")
         loss_fn = torch.nn.CrossEntropyLoss(size_average=True)
         # TODO: Plot an error vs training set size curve
         start_time = time.time()
@@ -184,10 +195,10 @@ class Trainer(object):
                 correct += 1 if torch.equal(torch.max(y_pred.data, 1)[1], torch.max(label.data, 1)[1]) else 0
             test_accuracy = correct/len(test_data)
             self.update_test_accuracy_plot(t + 1, test_accuracy)
-            print(f"Epoch: {t}\tRunning Loss: {running_loss:.2f}\tEpoch time: {(time.time() - epoch_start_time):.2f} sec")
-            print(f"Test Accuracy: {test_accuracy:.2%}")
-            print(f"Elapsed time: {(time.time() - start_time):.2f} sec")
-            print("Creating checkpoint")
+            self.update_text_log(f"Epoch: {t}\tRunning Loss: {running_loss:.2f}\tEpoch time: {(time.time() - epoch_start_time):.2f} sec")
+            self.update_text_log(f"Test Accuracy: {test_accuracy:.2%}")
+            self.update_text_log(f"Elapsed time: {(time.time() - start_time):.2f} sec")
+            self.update_text_log("Creating checkpoint")
             save_model({'epoch': t, 'state_dict': self.model.state_dict(), 'optimizer': self.optimizer.state_dict()})
 
 
