@@ -83,12 +83,9 @@ class Trainer(object):
         self.vis = visdom.Visdom()
         assert self.vis.check_connection()
 
-
-        self.test_accuracy_plot = self.vis.line(Y=np.array([0]), X=np.array([0]), opts=dict(
-            title='Test Accuracy',
-            ylabel='Accuracy',
-            xlabel='Epoch'
-        ))
+        # Visdom requires one data point for initializing a plot. No blankboards allowed yet.
+        self.train_loss_plot = None
+        self.test_accuracy_plot = None
 
     def update_loss_plot(self, epoch, epoch_loss):
         if not self.train_loss_plot:
@@ -106,10 +103,19 @@ class Trainer(object):
                           update='append')
 
     def update_test_accuracy_plot(self, epoch, accuracy):
-        self.vis.line(Y=np.array([accuracy]),
-                      X=np.array([epoch]),
-                      win=self.test_accuracy_plot,
-                      update='append')
+        if not self.test_accuracy_plot:
+            self.test_accuracy_plot = self.vis.line(Y=np.array([accuracy]),
+                                                    X=np.array([epoch]),
+                                                    opts=dict(
+                                                        title='Test Accuracy',
+                                                        ylabel='Accuracy',
+                                                        xlabel='Epoch'
+                                                    ))
+        else:
+            self.vis.line(Y=np.array([accuracy]),
+                          X=np.array([epoch]),
+                          win=self.test_accuracy_plot,
+                          update='append')
 
     def setup_model(self, resume=False):
         print("Loading Model")
