@@ -78,16 +78,22 @@ def load_model(model, optimizer, checkpoint='checkpoint.pth.tar'):
     optimizer.load_state_dict(checkpoint['optimizer'])
     return start_epoch
 
-if __name__ == '__main__':
+def get_args():
     parser = argparse.ArgumentParser(description='Train a model')
     parser.add_argument('--resume', type=bool, default=False, help='Resume training from checkpoint file')
-    args = parser.parse_args()
+    return parser.parse_args()
 
+def train_model():
+    args = get_args()
+    print("Training")
     resume = args.resume
     start_epoch = 0
     EPOCHS = 80
     running_loss = 0.0
+    print("Loading MNIST Data")
     training_data = DataLoader(mnist(set_type='train'), batch_size=1)
+    print("MNIST Loaded")
+    print("Transforming Data")
     train_mean = training_data.dataset.pix_mean
     train_stdev = training_data.dataset.stdev
     trsfrms = transforms.Compose([ZeroPad(pad_size=2),
@@ -95,6 +101,7 @@ if __name__ == '__main__':
                                   ToTensor()])
     training_data.dataset.transform = trsfrms
     test_data = DataLoader(mnist(set_type='test', transform=trsfrms), batch_size=1)
+    print("Transform Complete")
     model = LeNet5()
     optimizer = torch.optim.SGD(model.parameters(), lr=1e-4)
     if resume:
@@ -117,7 +124,7 @@ if __name__ == '__main__':
             image = Variable(sample['image'])
             label = Variable((sample['label'].squeeze() == 1).nonzero(), requires_grad=False)
             y_pred = model(image)
-            loss = loss_fn(y_pred, label.squeeze())
+            loss = loss_fn(y_pred, label)
             running_loss += loss.data[0]
             optimizer.zero_grad()
             loss.backward()
@@ -134,3 +141,7 @@ if __name__ == '__main__':
         print(f"Elapsed time: {(time.time() - start_time):.2f} sec")
         print("Creating checkpoint")
         save_model({'epoch': t, 'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict()})
+
+
+if __name__ == '__main__':
+    train_model()
