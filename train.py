@@ -7,6 +7,7 @@ from mnist import mnist
 from lenet5 import LeNet5
 import numpy as np
 import argparse
+import visdom
 
 class ToTensor(object):
     """Convert ndarrays in sample to Tensors."""
@@ -78,70 +79,110 @@ def load_model(model, optimizer, checkpoint='checkpoint.pth.tar'):
     optimizer.load_state_dict(checkpoint['optimizer'])
     return start_epoch
 
+
+class Trainer(object):
+    def __init__(self):
+        self.epochs = 20
+        self.vis = visdom.Visdom()
+        assert self.vis.check_connection()
+
+        self.train_loss_plot = self.vis.line(Y=np.array([0]), X=np.array([0]), opts=dict(
+            title='Training Loss',
+            ylabel='Loss',
+            xlabel='Epoch'
+        ))
+
+        self.test_accuracy_plot = self.vis.line(Y=np.array([0]), X=np.array([0]), opts=dict(
+            title='Test Accuracy',
+            ylabel='Accuracy',
+            xlabel='Epoch'
+        ))
+
+    def update_loss_plot(self, epoch, epoch_loss):
+        self.vis.line(Y=np.array([epoch_loss]),
+                      X=np.array([epoch]),
+                      win=self.train_loss_plot,
+                      update='append')
+
+    def update_test_accuracy_plot(self, epoch, accuracy):
+        self.vis.line(Y=np.array([accuracy]),
+                      X=np.array([epoch]),
+                      win=self.test_accuracy_plot,
+                      update='append')
+
+    def train(self):
+        args = get_args()
+        print("Training Module Started")
+        resume = args.resume
+        start_epoch = 0
+
+        running_loss = 0.0
+        print("Loading MNIST Data")
+        training_data = DataLoader(mnist(set_type='train'), batch_size=1)
+        print("MNIST Loaded")
+        print("Transforming Data")
+        train_mean = training_data.dataset.pix_mean
+        train_stdev = training_data.dataset.stdev
+        trsfrms = transforms.Compose([ZeroPad(pad_size=2),
+                                      Normalize(mean=train_mean, stdev=train_stdev),
+                                      ToTensor()])
+        training_data.dataset.transform = trsfrms
+        test_data = DataLoader(mnist(set_type='test', transform=trsfrms), batch_size=1)
+        print("Transform Complete")
+        model = LeNet5()
+        optimizer = torch.optim.SGD(model.parameters(), lr=1e-4)
+        if resume:
+            print("Resuming from saved model")
+            start_epoch = load_model(model, optimizer)
+        loss_fn = torch.nn.CrossEntropyLoss(size_average=True)
+        if torch.cuda.is_available():
+            print("Using GPU")
+            model.cuda()
+        # TODO: Plot an error vs training set size curve
+        start_time = time.time()
+        for t in range(start_epoch, self.epochs):
+            # TODO: Incomplete
+            update_learning_rate(optimizer, t)
+            epoch_start_time = time.time()
+            epoch_loss = 0
+            model.train(True)
+            for sample in training_data:
+                image = Variable(sample['image'])
+                # TODO: Detect loss type and do the right transformation on label
+                # Do this for MSELoss
+                # label = Variable((sample['label'].squeeze() == 1).nonzero(), requires_grad=False)
+                # label style for Cross Entropy Loss
+                label = Variable(sample['label'].squeeze().nonzero().select(0,0), requires_grad=False)
+                y_pred = model(image)
+                loss = loss_fn(y_pred, label)
+                epoch_loss += loss.item()
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+            self.update_loss_plot(t + 1, epoch_loss)
+            model.train(False)
+            correct = 0
+            for sample in test_data:
+                image = Variable(sample['image'])
+                label = Variable(sample['label'])
+                y_pred = model(image)
+                correct += 1 if torch.equal(torch.max(y_pred.data, 1)[1], torch.max(label.data, 1)[1]) else 0
+            test_accuracy = correct/len(test_data)
+            self.update_test_accuracy_plot(t + 1, test_accuracy)
+            print(f"Epoch: {t}\tRunning Loss: {running_loss:.2f}\tEpoch time: {(time.time() - epoch_start_time):.2f} sec")
+            print(f"Test Accuracy: {test_accuracy:.2%}")
+            print(f"Elapsed time: {(time.time() - start_time):.2f} sec")
+            print("Creating checkpoint")
+            save_model({'epoch': t, 'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict()})
+
+
+
 def get_args():
     parser = argparse.ArgumentParser(description='Train a model')
     parser.add_argument('--resume', type=bool, default=False, help='Resume training from checkpoint file')
     return parser.parse_args()
 
-def train_model():
-    args = get_args()
-    print("Training")
-    resume = args.resume
-    start_epoch = 0
-    EPOCHS = 80
-    running_loss = 0.0
-    print("Loading MNIST Data")
-    training_data = DataLoader(mnist(set_type='train'), batch_size=1)
-    print("MNIST Loaded")
-    print("Transforming Data")
-    train_mean = training_data.dataset.pix_mean
-    train_stdev = training_data.dataset.stdev
-    trsfrms = transforms.Compose([ZeroPad(pad_size=2),
-                                  Normalize(mean=train_mean, stdev=train_stdev),
-                                  ToTensor()])
-    training_data.dataset.transform = trsfrms
-    test_data = DataLoader(mnist(set_type='test', transform=trsfrms), batch_size=1)
-    print("Transform Complete")
-    model = LeNet5()
-    optimizer = torch.optim.SGD(model.parameters(), lr=1e-4)
-    if resume:
-        start_epoch = load_model(model, optimizer)
-    loss_fn = torch.nn.CrossEntropyLoss(size_average=True)
-    dtype = torch.FloatTensor
-    if torch.cuda.is_available():
-        print("Using GPU")
-        dtype = torch.cuda.FloatTensor
-        model.cuda()
-    # TODO: Plot an error vs training set size curve
-    # TODO: Plot an epoch vs error curve
-    start_time = time.time()
-    for t in range(start_epoch, EPOCHS):
-        # TODO: Incomplete
-        update_learning_rate(optimizer, t)
-        epoch_start_time = time.time()
-        model.train(True)
-        for sample in training_data:
-            image = Variable(sample['image'])
-            label = Variable((sample['label'].squeeze() == 1).nonzero(), requires_grad=False)
-            y_pred = model(image)
-            loss = loss_fn(y_pred, label)
-            running_loss += loss.data[0]
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-        model.train(False)
-        correct = 0
-        for sample in test_data:
-            image = Variable(sample['image'])
-            label = Variable(sample['label'])
-            y_pred = model(image)
-            correct += 1 if torch.equal(torch.max(y_pred.data, 1)[1], torch.max(label.data, 1)[1]) else 0
-        print(f"Epoch: {t}\tRunning Loss: {running_loss:.2f}\tEpoch time: {(time.time() - epoch_start_time):.2f} sec")
-        print(f"Test Accuracy: {(correct/len(test_data)):.2%}")
-        print(f"Elapsed time: {(time.time() - start_time):.2f} sec")
-        print("Creating checkpoint")
-        save_model({'epoch': t, 'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict()})
-
 
 if __name__ == '__main__':
-    train_model()
+    trainer = Trainer()
+    trainer.train()
