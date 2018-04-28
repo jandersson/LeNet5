@@ -72,25 +72,17 @@ def update_learning_rate(optimizer, current_epoch, override=None):
 def save_model(state, filename='checkpoint.pth.tar'):
     torch.save(state, filename)
 
-def load_model(model, optimizer, checkpoint='checkpoint.pth.tar'):
-    checkpoint = torch.load(checkpoint)
-    start_epoch = checkpoint['epoch']
-    model.load_state_dict(checkpoint['state_dict'])
-    optimizer.load_state_dict(checkpoint['optimizer'])
-    return start_epoch
 
 
 class Trainer(object):
     def __init__(self):
+        self.running_loss = 0.0
         self.epochs = 20
+        self.model = None
+        self.optimizer = None
         self.vis = visdom.Visdom()
         assert self.vis.check_connection()
 
-        self.train_loss_plot = self.vis.line(Y=np.array([0]), X=np.array([0]), opts=dict(
-            title='Training Loss',
-            ylabel='Loss',
-            xlabel='Epoch'
-        ))
 
         self.test_accuracy_plot = self.vis.line(Y=np.array([0]), X=np.array([0]), opts=dict(
             title='Test Accuracy',
@@ -99,10 +91,19 @@ class Trainer(object):
         ))
 
     def update_loss_plot(self, epoch, epoch_loss):
-        self.vis.line(Y=np.array([epoch_loss]),
-                      X=np.array([epoch]),
-                      win=self.train_loss_plot,
-                      update='append')
+        if not self.train_loss_plot:
+            self.train_loss_plot = self.vis.line(Y=np.array([epoch_loss]),
+                                                 X=np.array([epoch]),
+                                                 opts=dict(
+                                                    title='Training Loss',
+                                                    ylabel='Loss',
+                                                    xlabel='Epoch'
+                                                ))
+        else:
+            self.vis.line(Y=np.array([epoch_loss]),
+                          X=np.array([epoch]),
+                          win=self.train_loss_plot,
+                          update='append')
 
     def update_test_accuracy_plot(self, epoch, accuracy):
         self.vis.line(Y=np.array([accuracy]),
@@ -110,9 +111,26 @@ class Trainer(object):
                       win=self.test_accuracy_plot,
                       update='append')
 
+    def setup_model(self, resume=False):
+        print("Loading Model")
+        self.model = LeNet5()
+        self.optimizer = torch.optim.SGD(self.model.parameters(), lr=1e-4)
+        if resume:
+            print("Resuming from saved model")
+            self.load_saved_model()
+        if torch.cuda.is_available():
+            print("Using GPU")
+            self.model.cuda()
+
+    def load_saved_model(self, checkpoint='checkpoint.pth.tar'):
+        checkpoint = torch.load(checkpoint)
+        self.model.load_state_dict(checkpoint['state_dict'])
+        self.optimizer.load_state_dict(checkpoint['optimizer'])
+
     def train(self):
-        args = get_args()
         print("Training Module Started")
+        args = get_args()
+        self.setup_model()
         resume = args.resume
         start_epoch = 0
 
@@ -129,23 +147,14 @@ class Trainer(object):
         training_data.dataset.transform = trsfrms
         test_data = DataLoader(mnist(set_type='test', transform=trsfrms), batch_size=1)
         print("Transform Complete")
-        model = LeNet5()
-        optimizer = torch.optim.SGD(model.parameters(), lr=1e-4)
-        if resume:
-            print("Resuming from saved model")
-            start_epoch = load_model(model, optimizer)
         loss_fn = torch.nn.CrossEntropyLoss(size_average=True)
-        if torch.cuda.is_available():
-            print("Using GPU")
-            model.cuda()
         # TODO: Plot an error vs training set size curve
         start_time = time.time()
         for t in range(start_epoch, self.epochs):
-            # TODO: Incomplete
-            update_learning_rate(optimizer, t)
+            update_learning_rate(self.optimizer, t)
             epoch_start_time = time.time()
             epoch_loss = 0
-            model.train(True)
+            self.model.train(True)
             for sample in training_data:
                 image = Variable(sample['image'])
                 # TODO: Detect loss type and do the right transformation on label
@@ -153,19 +162,19 @@ class Trainer(object):
                 # label = Variable((sample['label'].squeeze() == 1).nonzero(), requires_grad=False)
                 # label style for Cross Entropy Loss
                 label = Variable(sample['label'].squeeze().nonzero().select(0,0), requires_grad=False)
-                y_pred = model(image)
+                y_pred = self.model(image)
                 loss = loss_fn(y_pred, label)
                 epoch_loss += loss.item()
-                optimizer.zero_grad()
+                self.optimizer.zero_grad()
                 loss.backward()
-                optimizer.step()
+                self.optimizer.step()
             self.update_loss_plot(t + 1, epoch_loss)
-            model.train(False)
+            self.model.train(False)
             correct = 0
             for sample in test_data:
                 image = Variable(sample['image'])
                 label = Variable(sample['label'])
-                y_pred = model(image)
+                y_pred = self.model(image)
                 correct += 1 if torch.equal(torch.max(y_pred.data, 1)[1], torch.max(label.data, 1)[1]) else 0
             test_accuracy = correct/len(test_data)
             self.update_test_accuracy_plot(t + 1, test_accuracy)
@@ -173,7 +182,7 @@ class Trainer(object):
             print(f"Test Accuracy: {test_accuracy:.2%}")
             print(f"Elapsed time: {(time.time() - start_time):.2f} sec")
             print("Creating checkpoint")
-            save_model({'epoch': t, 'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict()})
+            save_model({'epoch': t, 'state_dict': self.model.state_dict(), 'optimizer': self.optimizer.state_dict()})
 
 
 
