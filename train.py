@@ -1,9 +1,11 @@
 import time
+from datetime import datetime
 import argparse
 import torch
 from torch.autograd import Variable
 from torch.utils.data import DataLoader
 from torchvision import transforms
+from torch.optim import lr_scheduler
 from mnist import mnist
 from lenet5 import LeNet5
 import numpy as np
@@ -51,7 +53,7 @@ class Normalize(object):
         return sample
 
 def update_learning_rate(optimizer, current_epoch, override=None):
-    """Return optimizer with learning rate schedule from paper"""
+    """Deprecated: Return optimizer with learning rate schedule from paper"""
     # Learning Rate schedule: 0.0005 for first 2 iterations, 0.0002 for next 3, 0.0001 next 3, 0.00005 next 4,
     # 0.00001 thereafter
     if current_epoch < 2:
@@ -79,12 +81,17 @@ class Trainer(object):
         self.epochs = 20
         self.model = None
         self.optimizer = None
+        self.scheduler = None
         self.vis = Visualizer()
 
     def setup_model(self, resume=False):
         print("Loading Model")
         self.model = LeNet5()
-        self.optimizer = torch.optim.SGD(self.model.parameters(), lr=1e-4)
+        self.optimizer = torch.optim.SGD(self.model.parameters(), lr=0.005)
+        self.scheduler = lr_scheduler.MultiStepLR(self.optimizer,
+                                                  milestones=[2, 5, 8, 12],
+                                                  gamma=0.1)
+
         if resume:
             print("Resuming from saved model")
             self.load_saved_model()
@@ -98,7 +105,7 @@ class Trainer(object):
         self.optimizer.load_state_dict(checkpoint['optimizer'])
 
     def train(self):
-        self.vis.write_log("Training Module Started")
+        self.vis.write_log(f"Training Module Started at {datetime.now().isoformat(' ', timespec='seconds')}")
         args = get_args()
         self.setup_model()
         resume = args.resume
@@ -121,7 +128,6 @@ class Trainer(object):
         # TODO: Plot an error vs training set size curve
         start_time = time.time()
         for t in range(start_epoch, self.epochs):
-            update_learning_rate(self.optimizer, t)
             epoch_start_time = time.time()
             epoch_loss = 0
             self.model.train(True)
@@ -138,6 +144,7 @@ class Trainer(object):
                 self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()
+            self.scheduler.step()
             self.vis.update_loss_plot(t + 1, epoch_loss)
             self.model.train(False)
             correct = 0
