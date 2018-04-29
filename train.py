@@ -1,4 +1,5 @@
 import time
+import argparse
 import torch
 from torch.autograd import Variable
 from torch.utils.data import DataLoader
@@ -6,8 +7,7 @@ from torchvision import transforms
 from mnist import mnist
 from lenet5 import LeNet5
 import numpy as np
-import argparse
-import visdom
+from visualize import Visualizer
 
 class ToTensor(object):
     """Convert ndarrays in sample to Tensors."""
@@ -73,60 +73,13 @@ def save_model(state, filename='checkpoint.pth.tar'):
     torch.save(state, filename)
 
 
-
 class Trainer(object):
     def __init__(self):
         self.running_loss = 0.0
         self.epochs = 20
         self.model = None
         self.optimizer = None
-        self.vis = visdom.Visdom()
-        assert self.vis.check_connection()
-
-        # Visdom requires one data point for initializing a plot. No blankboards allowed yet.
-        self.train_loss_plot = None
-        self.test_accuracy_plot = None
-        self.text_log = None
-        self.log_messages = ''
-
-    def update_loss_plot(self, epoch, epoch_loss):
-        if not self.train_loss_plot:
-            self.train_loss_plot = self.vis.line(Y=np.array([epoch_loss]),
-                                                 X=np.array([epoch]),
-                                                 opts=dict(
-                                                    title='Training Loss',
-                                                    ylabel='Loss',
-                                                    xlabel='Epoch'
-                                                ))
-        else:
-            self.vis.line(Y=np.array([epoch_loss]),
-                          X=np.array([epoch]),
-                          win=self.train_loss_plot,
-                          update='append')
-
-    def update_test_accuracy_plot(self, epoch, accuracy):
-        if not self.test_accuracy_plot:
-            self.test_accuracy_plot = self.vis.line(Y=np.array([accuracy]),
-                                                    X=np.array([epoch]),
-                                                    opts=dict(
-                                                        title='Test Accuracy',
-                                                        ylabel='Accuracy',
-                                                        xlabel='Epoch'
-                                                    ))
-        else:
-            self.vis.line(Y=np.array([accuracy]),
-                          X=np.array([epoch]),
-                          win=self.test_accuracy_plot,
-                          update='append')
-
-    def write_log(self, message):
-        print(message)
-        if not self.text_log:
-            self.log_messages = message
-            self.text_log = self.vis.text(message)
-        else:
-            self.log_messages = self.log_messages + f"\n<br>{message}"
-            self.vis.text(self.log_messages, win=self.text_log)
+        self.vis = Visualizer()
 
     def setup_model(self, resume=False):
         print("Loading Model")
@@ -145,17 +98,17 @@ class Trainer(object):
         self.optimizer.load_state_dict(checkpoint['optimizer'])
 
     def train(self):
-        self.write_log("Training Module Started")
+        self.vis.write_log("Training Module Started")
         args = get_args()
         self.setup_model()
         resume = args.resume
         start_epoch = 0
 
         running_loss = 0.0
-        self.write_log("Loading MNIST Data")
+        self.vis.write_log("Loading MNIST Data")
         training_data = DataLoader(mnist(set_type='train'), batch_size=1)
-        self.write_log("MNIST Loaded")
-        self.write_log("Transforming Data")
+        self.vis.write_log("MNIST Loaded")
+        self.vis.write_log("Transforming Data")
         train_mean = training_data.dataset.pix_mean
         train_stdev = training_data.dataset.stdev
         trsfrms = transforms.Compose([ZeroPad(pad_size=2),
@@ -163,7 +116,7 @@ class Trainer(object):
                                       ToTensor()])
         training_data.dataset.transform = trsfrms
         test_data = DataLoader(mnist(set_type='test', transform=trsfrms), batch_size=1)
-        self.write_log("Transform Complete")
+        self.vis.write_log("Transform Complete")
         loss_fn = torch.nn.CrossEntropyLoss(size_average=True)
         # TODO: Plot an error vs training set size curve
         start_time = time.time()
@@ -185,7 +138,7 @@ class Trainer(object):
                 self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()
-            self.update_loss_plot(t + 1, epoch_loss)
+            self.vis.update_loss_plot(t + 1, epoch_loss)
             self.model.train(False)
             correct = 0
             for sample in test_data:
@@ -194,11 +147,11 @@ class Trainer(object):
                 y_pred = self.model(image)
                 correct += 1 if torch.equal(torch.max(y_pred.data, 1)[1], torch.max(label.data, 1)[1]) else 0
             test_accuracy = correct/len(test_data)
-            self.update_test_accuracy_plot(t + 1, test_accuracy)
-            self.write_log(f"Epoch: {t}\tRunning Loss: {running_loss:.2f}\tEpoch time: {(time.time() - epoch_start_time):.2f} sec")
-            self.write_log(f"Test Accuracy: {test_accuracy:.2%}")
-            self.write_log(f"Elapsed time: {(time.time() - start_time):.2f} sec")
-            self.write_log("Creating checkpoint")
+            self.vis.update_test_accuracy_plot(t + 1, test_accuracy)
+            self.vis.write_log(f"Epoch: {t}\tRunning Loss: {running_loss:.2f}\tEpoch time: {(time.time() - epoch_start_time):.2f} sec")
+            self.vis.write_log(f"Test Accuracy: {test_accuracy:.2%}")
+            self.vis.write_log(f"Elapsed time: {(time.time() - start_time):.2f} sec")
+            self.vis.write_log("Creating checkpoint")
             save_model({'epoch': t, 'state_dict': self.model.state_dict(), 'optimizer': self.optimizer.state_dict()})
 
 
