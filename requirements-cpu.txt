@@ -4,7 +4,7 @@ mkl-fft==1.0.0
 mkl-random==1.0.1
 numpy==1.14.2
 olefile==0.45.1
-Pillow==5.1.0
+Pillow==6.2.0
 pycparser==2.18
 six==1.11.0
 torch==0.4.0
